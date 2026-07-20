@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shipia - Label Processing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Hide the canvas by default, it's used for drawing the image export */
+        #labelCanvas {
+            display: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
+        
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-gray-800">Shipia</h1>
+            <p class="text-sm text-gray-500">Label Processing (Crown Logistics)</p>
+        </div>
+
+        <!-- Input Form -->
+        <form id="labelForm" class="space-y-6">
+            
+            <!-- Contract Number Input -->
+            <div>
+                <label for="contractNumber" class="block text-sm font-medium text-gray-700 mb-1">Contract Number</label>
+                <input type="text" id="contractNumber" name="contractNumber" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                    placeholder="e.g., CN-2026-001">
+            </div>
+
+            <!-- Engine Number Input -->
+            <div>
+                <label for="engineNumber" class="block text-sm font-medium text-gray-700 mb-1">Engine Number</label>
+                <input type="text" id="engineNumber" name="engineNumber" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                    placeholder="e.g., V8-99234">
+            </div>
+
+            <!-- Customer Code Dropdown -->
+            <div>
+                <label for="customerCode" class="block text-sm font-medium text-gray-700 mb-1">Customer Code</label>
+                <select id="customerCode" name="customerCode" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors bg-white">
+                    <option value="" disabled selected>Select customer code</option>
+                    <option value="BJ1098">BJ1098</option>
+                    <option value="BJ 8888">BJ 8888</option>
+                </select>
+            </div>
+
+            <!-- Generate Button -->
+            <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-md transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Generate Label
+            </button>
+        </form>
+
+        <!-- Preview Area (Hidden initially) -->
+        <div id="previewArea" class="mt-8 hidden flex flex-col items-center border-t border-gray-200 pt-6">
+            <h2 class="text-sm font-semibold text-gray-500 mb-4 w-full text-left">Label Preview:</h2>
+            
+            <!-- Visual representation of the label -->
+            <div id="labelVisualPreview" class="border-2 border-dashed border-gray-400 p-4 bg-white shadow-sm flex flex-col items-center w-full max-w-[350px]">
+                <h3 class="font-bold text-xl mb-2 text-center text-black w-full tracking-wide">Crown International</h3>
+                <p id="previewCustomerCode" class="text-lg font-medium mb-4 text-black"></p>
+                
+                <!-- SVG container for the barcode generation before drawing to canvas -->
+                <svg id="barcodeSvg" class="w-full max-w-[280px] h-auto"></svg>
+                
+                <div class="flex justify-between w-full mt-4 text-sm font-medium text-black border-t border-gray-200 pt-2">
+                    <div class="flex flex-col">
+                         <span class="text-xs text-gray-500">Contract No.</span>
+                         <span id="previewContract"></span>
+                    </div>
+                    <div class="flex flex-col text-right">
+                         <span class="text-xs text-gray-500">Engine No.</span>
+                         <span id="previewEngine"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Download Button -->
+            <button id="downloadBtn" type="button"
+                class="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors shadow-sm flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+                Download PNG
+            </button>
+        </div>
+        
+        <!-- Hidden canvas used for final rendering -->
+        <canvas id="labelCanvas"></canvas>
+    </div>
+
+    <!-- History Log Area (New Section) -->
+    <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-4xl mt-8 mb-8 hidden" id="historyContainer">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="text-xl font-bold text-gray-800">Generation History</h2>
+                <p class="text-sm text-gray-500">Log of all labels generated in this session.</p>
+            </div>
+            <button id="exportCsvBtn" type="button"
+                class="bg-gray-800 hover:bg-gray-900 text-white font-medium py-2 px-4 rounded-md transition-colors shadow-sm flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+                Export CSV
+            </button>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 border border-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Code</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contract No.</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Engine No.</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Barcode Value</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody" class="bg-white divide-y divide-gray-200">
+                    <!-- History rows will be injected here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('labelForm');
+            const previewArea = document.getElementById('previewArea');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const barcodeSvg = document.getElementById('barcodeSvg');
+            
+            // Preview elements
+            const previewCustomerCode = document.getElementById('previewCustomerCode');
+            const previewContract = document.getElementById('previewContract');
+            const previewEngine = document.getElementById('previewEngine');
+            
+            // History elements
+            const historyContainer = document.getElementById('historyContainer');
+            const historyTableBody = document.getElementById('historyTableBody');
+            const exportCsvBtn = document.getElementById('exportCsvBtn');
+            const generatedHistory = []; // Array to store history objects
+
+            let currentBarcodeValue = '';
+            let currentContract = '';
+            let currentEngine = '';
+            let currentCustomer = '';
+
+            function generateUniqueId() {
+                // Generates a random number between 100000000 and 999999999
+                return Math.floor(100000000 + Math.random() * 900000000).toString();
+            }
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+
+                // 1. Gather Inputs
+                currentContract = document.getElementById('contractNumber').value.trim();
+                currentEngine = document.getElementById('engineNumber').value.trim();
+                currentCustomer = document.getElementById('customerCode').value;
+
+                if (!currentCustomer) {
+                    alert("Please select a Customer Code.");
+                    return;
+                }
+
+                // 2. Generate Logic
+                const unique9DigitString = generateUniqueId();
+                currentBarcodeValue = `${currentCustomer}${unique9DigitString}`;
+
+                // 3. Update Preview UI
+                previewCustomerCode.textContent = currentCustomer;
+                previewContract.textContent = currentContract;
+                previewEngine.textContent = currentEngine;
+
+                // 4. Generate Barcode on SVG
+                try {
+                    JsBarcode(barcodeSvg, currentBarcodeValue, {
+                        format: "CODE128",
+                        lineColor: "#000",
+                        width: 2,
+                        height: 60,
+                        displayValue: true,
+                        fontSize: 14,
+                        margin: 10,
+                        fontOptions: "bold"
+                    });
+                    
+                    // Show the preview area
+                    previewArea.classList.remove('hidden');
+                    
+                    // 5. Add to History
+                    addToHistory({
+                        timestamp: new Date().toLocaleString(),
+                        customer: currentCustomer,
+                        contract: currentContract,
+                        engine: currentEngine,
+                        barcode: currentBarcodeValue
+                    });
+
+                } catch (error) {
+                    console.error("Barcode generation failed:", error);
+                    alert("Failed to generate barcode. Please check inputs.");
+                }
+            });
+
+            downloadBtn.addEventListener('click', () => {
+                const canvas = document.getElementById('labelCanvas');
+                const ctx = canvas.getContext('2d');
+
+                // Adjust dimensions to closer match the target image aspect ratio
+                const width = 400;
+                const height = 300;
+                canvas.width = width;
+                canvas.height = height;
+
+                // Fill white background
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+
+                ctx.fillStyle = '#000000'; // Black text
+
+                // Row 1: Crown International
+                ctx.font = 'bold 22px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Crown International', width / 2, 40);
+
+                // Row 2: Customer Code
+                ctx.font = 'normal 20px Arial, sans-serif';
+                ctx.fillText(currentCustomer, width / 2, 75);
+
+                // Serialize the SVG to draw onto the canvas
+                const svgData = new XMLSerializer().serializeToString(barcodeSvg);
+                const DOMURL = window.URL || window.webkitURL || window;
+                const img = new Image();
+                // Crucial: encode the SVG properly for it to load reliably in all browsers
+                const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+                const url = DOMURL.createObjectURL(svgBlob);
+
+                // Wait for the image to load before drawing the rest of the canvas
+                img.onload = function () {
+                    // Get intrinsic dimensions or use defaults
+                    const bcWidth = parseInt(barcodeSvg.getAttribute('width')) || 300;
+                    const bcHeight = parseInt(barcodeSvg.getAttribute('height')) || 100;
+                    
+                    // Center the barcode horizontally
+                    const xPos = (width - bcWidth) / 2;
+                    // Position barcode below the customer code
+                    const yPos = 90; 
+
+                    // Draw the barcode image onto the canvas
+                    ctx.drawImage(img, xPos, yPos);
+                    DOMURL.revokeObjectURL(url); // Clean up the URL object
+
+                    // Draw the divider line
+                    const lineY = yPos + bcHeight + 20;
+                    ctx.beginPath();
+                    ctx.moveTo(20, lineY);
+                    ctx.lineTo(width - 20, lineY);
+                    ctx.strokeStyle = '#e5e7eb'; // Light gray line
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    // Row 4: Contract and Engine Numbers (Matching the target image layout)
+                    const textY = lineY + 25;
+                    const valueY = textY + 20;
+
+                    // Left Side: Contract No.
+                    ctx.textAlign = 'left';
+                    ctx.font = 'normal 12px Arial, sans-serif';
+                    ctx.fillStyle = '#6b7280'; // Gray text for labels
+                    ctx.fillText('Contract No.', 20, textY);
+                    
+                    ctx.font = 'normal 16px Arial, sans-serif';
+                    ctx.fillStyle = '#000000'; // Black text for values
+                    ctx.fillText(currentContract, 20, valueY);
+                    
+                    // Right Side: Engine No.
+                    ctx.textAlign = 'right';
+                    ctx.font = 'normal 12px Arial, sans-serif';
+                    ctx.fillStyle = '#6b7280';
+                    ctx.fillText('Engine No.', width - 20, textY);
+                    
+                    ctx.font = 'normal 16px Arial, sans-serif';
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(currentEngine, width - 20, valueY);
+
+                    // Finally, trigger the download once EVERYTHING is drawn
+                    const imgURI = canvas
+                        .toDataURL('image/png')
+                        .replace('image/png', 'image/octet-stream');
+                    
+                    const a = document.createElement('a');
+                    a.href = imgURI;
+                    a.download = `Label_${currentCustomer}_${currentBarcodeValue}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                };
+                
+                // This triggers the onload event above
+                img.src = url;
+            });
+
+            // History Functions
+            function addToHistory(record) {
+                generatedHistory.push(record);
+                
+                // Unhide container if it's the first item
+                if (generatedHistory.length === 1) {
+                    historyContainer.classList.remove('hidden');
+                }
+
+                // Create new row
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.timestamp}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${record.customer}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.contract}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.engine}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">${record.barcode}</td>
+                `;
+                
+                // Add to top of table
+                historyTableBody.insertBefore(row, historyTableBody.firstChild);
+            }
+
+            exportCsvBtn.addEventListener('click', () => {
+                if (generatedHistory.length === 0) {
+                    alert("No history to export.");
+                    return;
+                }
+
+                // CSV Headers
+                const headers = ['Timestamp', 'Customer Code', 'Contract No.', 'Engine No.', 'Barcode Value'];
+                
+                // Map data to CSV rows
+                const csvRows = [];
+                csvRows.push(headers.join(',')); // Add header row
+
+                for (const row of generatedHistory) {
+                    // Quote strings to handle commas within values safely
+                    const values = [
+                        `"${row.timestamp}"`,
+                        `"${row.customer}"`,
+                        `"${row.contract}"`,
+                        `"${row.engine}"`,
+                        `"${row.barcode}"`
+                    ];
+                    csvRows.push(values.join(','));
+                }
+
+                const csvString = csvRows.join('\n');
+                
+                // Create a Blob and download link
+                const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Shipia_Label_History_${new Date().toISOString().slice(0,10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        });
+    </script>
+</body>
+</html>
